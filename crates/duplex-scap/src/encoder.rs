@@ -26,6 +26,8 @@ impl EncodedPacket {
     pub fn to_video_packet(&self) -> VideoPacket {
         VideoPacket {
             timestamp_us: self.timestamp_us,
+            frame_id: 0,
+            trace: None,
             data: self.data.clone(),
         }
     }

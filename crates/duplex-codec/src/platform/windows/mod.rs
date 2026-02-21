@@ -167,7 +167,7 @@ impl PlatformVideoEncoder {
         let mf = MfThreadContext::init()?;
         let (transform, input_stream_id, output_stream_id, seq_header_annexb, nal_len_size, dxgi) =
             init_encoder_transform(width, height, fps, bitrate_kbps)?;
-        let (tx, rx) = mpsc::sync_channel::<EncodedPacket>(10);
+        let (tx, rx) = mpsc::sync_channel::<EncodedPacket>(1);
 
         Ok((
             Self {
@@ -236,7 +236,7 @@ impl PlatformVideoDecoder {
         configure_decoder_types(&transform, input_stream_id)?;
         start_streaming(&transform)?;
         let (fmt, w, h) = read_decoder_output_format(&transform, output_stream_id)?;
-        let (tx, rx) = mpsc::sync_channel::<DuplexScapFrame>(10);
+        let (tx, rx) = mpsc::sync_channel::<DuplexScapFrame>(1);
 
         Ok((
             Self {

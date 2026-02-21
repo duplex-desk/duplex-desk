@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use duplex_proto::{ControlMessage, InputEvent, VideoPacket};
+use duplex_proto::{ControlMessage, InputEvent, VideoPacket, VideoTrace};
 use quinn::{Connection, Endpoint, RecvStream, SendStream};
 
 use crate::error::TransportError;
@@ -13,6 +13,8 @@ pub struct VideoFrame {
     pub data: Vec<u8>,
     pub is_keyframe: bool,
     pub timestamp_us: u64,
+    pub frame_id: u64,
+    pub trace: Option<VideoTrace>,
 }
 
 #[derive(Debug)]
@@ -247,6 +249,8 @@ async fn recv_server_packet_from_stream(
                 data: video.data,
                 is_keyframe,
                 timestamp_us: video.timestamp_us,
+                frame_id: video.frame_id,
+                trace: video.trace,
             }))
         }
         x if x == PacketType::Control as u8 => {

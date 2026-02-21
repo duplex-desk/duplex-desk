@@ -22,6 +22,9 @@ pub enum ControlMessage {
     SessionState {
         state: SessionState,
     },
+    Disconnect {
+        reason: String,
+    },
     Ping,
     Pong,
 }

@@ -51,7 +51,7 @@ impl VideoToolboxDecoder {
         let format_desc = create_format_description(&sps, &pps)?;
 
         // 3. 创建 channel 和 callback state
-        let (tx, rx) = mpsc::sync_channel::<DuplexScapFrame>(10);
+        let (tx, rx) = mpsc::sync_channel::<DuplexScapFrame>(1);
         let state = Arc::new(Mutex::new(CallbackState { sender: tx }));
         let state_ptr = Arc::as_ptr(&state) as *mut c_void;
 

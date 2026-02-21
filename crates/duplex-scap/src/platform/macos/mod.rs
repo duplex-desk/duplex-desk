@@ -102,7 +102,7 @@ impl MacOSCapturer {
             );
 
             // 6. Channel + stream output delegate.
-            let (tx, rx) = mpsc::sync_channel::<DuplexScapFrame>(5);
+            let (tx, rx) = mpsc::sync_channel::<DuplexScapFrame>(1);
             let output = StreamOutput::new(tx);
 
             // 7. Register output callback queue.

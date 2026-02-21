@@ -1,9 +1,21 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct VideoTrace {
+    pub host_capture_us: u64,
+    pub host_encode_submit_us: u64,
+    pub host_encode_done_us: u64,
+    pub host_send_submit_us: u64,
+}
+
 /// Encoded video packet payload (Annex-B H.264 bytes).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoPacket {
     pub timestamp_us: u64,
+    #[serde(default)]
+    pub frame_id: u64,
+    #[serde(default)]
+    pub trace: Option<VideoTrace>,
     pub data: Vec<u8>,
 }
 

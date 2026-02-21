@@ -5,7 +5,7 @@ pub mod sender;
 mod tls;
 
 pub use duplex_proto::{
-    ControlMessage, InputEvent, Modifiers, MouseButton, NormalizedPos, VideoPacket,
+    ControlMessage, InputEvent, Modifiers, MouseButton, NormalizedPos, VideoPacket, VideoTrace,
 };
 pub use error::TransportError;
 pub use receiver::{

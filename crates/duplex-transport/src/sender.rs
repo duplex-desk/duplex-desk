@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use duplex_proto::{ControlMessage, InputEvent, VideoPacket};
+use duplex_proto::{ControlMessage, InputEvent, VideoPacket, VideoTrace};
 use quinn::{Connection, Endpoint, RecvStream, SendStream};
 
 use crate::error::TransportError;
@@ -98,7 +98,34 @@ impl SenderSession {
         is_keyframe: bool,
         timestamp_us: u64,
     ) -> Result<(), TransportError> {
-        send_video_on_stream(&mut self.video_stream, data, is_keyframe, timestamp_us).await
+        send_video_on_stream(
+            &mut self.video_stream,
+            data,
+            is_keyframe,
+            timestamp_us,
+            0,
+            None,
+        )
+        .await
+    }
+
+    pub async fn send_video_with_trace(
+        &mut self,
+        data: Vec<u8>,
+        is_keyframe: bool,
+        timestamp_us: u64,
+        frame_id: u64,
+        trace: Option<VideoTrace>,
+    ) -> Result<(), TransportError> {
+        send_video_on_stream(
+            &mut self.video_stream,
+            data,
+            is_keyframe,
+            timestamp_us,
+            frame_id,
+            trace,
+        )
+        .await
     }
 
     /// 发送控制消息给 Viewer
@@ -144,7 +171,34 @@ impl SenderVideoSession {
         is_keyframe: bool,
         timestamp_us: u64,
     ) -> Result<(), TransportError> {
-        send_video_on_stream(&mut self.video_stream, data, is_keyframe, timestamp_us).await
+        send_video_on_stream(
+            &mut self.video_stream,
+            data,
+            is_keyframe,
+            timestamp_us,
+            0,
+            None,
+        )
+        .await
+    }
+
+    pub async fn send_video_with_trace(
+        &mut self,
+        data: Vec<u8>,
+        is_keyframe: bool,
+        timestamp_us: u64,
+        frame_id: u64,
+        trace: Option<VideoTrace>,
+    ) -> Result<(), TransportError> {
+        send_video_on_stream(
+            &mut self.video_stream,
+            data,
+            is_keyframe,
+            timestamp_us,
+            frame_id,
+            trace,
+        )
+        .await
     }
 
     /// 发送控制消息给 Viewer
@@ -189,8 +243,15 @@ async fn send_video_on_stream(
     data: Vec<u8>,
     is_keyframe: bool,
     timestamp_us: u64,
+    frame_id: u64,
+    trace: Option<VideoTrace>,
 ) -> Result<(), TransportError> {
-    let payload = VideoPacket { timestamp_us, data };
+    let payload = VideoPacket {
+        timestamp_us,
+        frame_id,
+        trace,
+        data,
+    };
     let payload_bytes = payload.encode().map_err(TransportError::Serialize)?;
 
     let packet_type = if is_keyframe {

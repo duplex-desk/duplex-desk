@@ -5,6 +5,7 @@ pub struct VideoFrameTexture {
     texture: Option<Texture>,
     frame_width: usize,
     frame_height: usize,
+    packed: Vec<u32>,
 }
 
 impl VideoFrameTexture {
@@ -48,26 +49,36 @@ impl VideoFrameTexture {
             self.frame_height = height;
         }
 
-        let mut packed = Vec::with_capacity(width.saturating_mul(height));
+        self.packed.clear();
+        self.packed.reserve(width.saturating_mul(height));
         if stride == expected_row_bytes {
             for px in bgra.chunks_exact(4).take(width.saturating_mul(height)) {
-                packed.push(u32::from_le_bytes([px[0], px[1], px[2], px[3]]));
+                self.packed
+                    .push(u32::from_le_bytes([px[0], px[1], px[2], px[3]]));
             }
         } else {
             for row in 0..height {
                 let start = row.saturating_mul(stride);
                 let end = start.saturating_add(expected_row_bytes);
                 for px in bgra[start..end].chunks_exact(4) {
-                    packed.push(u32::from_le_bytes([px[0], px[1], px[2], px[3]]));
+                    self.packed
+                        .push(u32::from_le_bytes([px[0], px[1], px[2], px[3]]));
                 }
             }
         }
 
         if let Some(texture) = &self.texture {
-            texture.swap_vec_u32(cx, &mut packed);
+            texture.swap_vec_u32(cx, &mut self.packed);
             true
         } else {
             false
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.texture = None;
+        self.frame_width = 0;
+        self.frame_height = 0;
+        self.packed.clear();
     }
 }

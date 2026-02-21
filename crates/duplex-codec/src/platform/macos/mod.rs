@@ -20,7 +20,7 @@ impl PlatformVideoEncoder {
         bitrate_kbps: u32,
     ) -> Result<(Self, Receiver<EncodedPacket>), String> {
         let (inner, vt_rx) = VideoToolboxEncoder::new(width, height, fps, bitrate_kbps)?;
-        let (tx, rx) = mpsc::sync_channel::<EncodedPacket>(10);
+        let (tx, rx) = mpsc::sync_channel::<EncodedPacket>(1);
 
         std::thread::spawn(move || {
             while let Ok(packet) = vt_rx.recv() {

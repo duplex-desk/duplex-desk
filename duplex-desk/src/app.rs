@@ -12,7 +12,8 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use crate::{
     host_task::{HostTaskHandle, start_host_task},
     receiver_task::{ViewerTaskHandle, start_viewer_task},
-    task_event::TaskEvent,
+    task_event::{FrameTelemetry, TaskEvent, UiFrame},
+    time_utils::mono_now_us,
     video_view::VideoFrameTexture,
 };
 
@@ -187,6 +188,10 @@ live_design! {
                                     host_btn = <MpButtonSecondary> {
                                         text: "Return Host",
                                     }
+
+                                    cancel_btn = <MpButtonGhost> {
+                                        text: "Cancel Connection",
+                                    }
                                 }
                             }
                         }
@@ -224,6 +229,30 @@ live_design! {
                             }
                         }
                     }
+                    notice_modal = <MpModalWidget> {
+                        content = {
+                            dialog = <MpAlertDialog> {
+                                width: 420,
+                                header = {
+                                    title = { text: "Connection Notice" }
+                                }
+                                body = {
+                                    <View> {
+                                        width: Fill,
+                                        flow: Down,
+                                        spacing: 8,
+                                        notice_message_label = <Label> {
+                                            draw_text: { color: #334155, wrap: Word }
+                                            text: "-"
+                                        }
+                                    }
+                                }
+                                footer = {
+                                    notice_ok_btn = <MpButtonPrimary> { text: "OK" }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -239,6 +268,88 @@ enum AppMode {
     Viewer,
 }
 
+#[derive(Default)]
+struct LatencyMetric {
+    count: u64,
+    sum_us: u128,
+    max_us: u64,
+}
+
+impl LatencyMetric {
+    fn record(&mut self, value_us: u64) {
+        self.count = self.count.saturating_add(1);
+        self.sum_us = self.sum_us.saturating_add(value_us as u128);
+        self.max_us = self.max_us.max(value_us);
+    }
+
+    fn avg_us(&self) -> u64 {
+        if self.count == 0 {
+            0
+        } else {
+            (self.sum_us / self.count as u128) as u64
+        }
+    }
+
+    fn reset(&mut self) {
+        self.count = 0;
+        self.sum_us = 0;
+        self.max_us = 0;
+    }
+}
+
+#[derive(Default)]
+struct UiLatencyStats {
+    last_log_us: u64,
+    frames: u64,
+    viewer_decode_done_to_ui_swap: LatencyMetric,
+    viewer_recv_to_ui_swap: LatencyMetric,
+    viewer_decode_submit_to_ui_swap: LatencyMetric,
+}
+
+impl UiLatencyStats {
+    fn observe(&mut self, telemetry: &FrameTelemetry, ui_swap_us: u64) {
+        self.frames = self.frames.saturating_add(1);
+
+        if let Some(v) = ui_swap_us.checked_sub(telemetry.viewer_decode_done_us) {
+            self.viewer_decode_done_to_ui_swap.record(v);
+        }
+        if let Some(v) = ui_swap_us.checked_sub(telemetry.viewer_recv_us) {
+            self.viewer_recv_to_ui_swap.record(v);
+        }
+        if let Some(v) = ui_swap_us.checked_sub(telemetry.viewer_decode_submit_us) {
+            self.viewer_decode_submit_to_ui_swap.record(v);
+        }
+    }
+
+    fn maybe_log(&mut self) {
+        if self.frames == 0 {
+            return;
+        }
+        let now_us = mono_now_us();
+        if now_us.saturating_sub(self.last_log_us) < 2_000_000 && self.frames < 120 {
+            return;
+        }
+
+        tracing::info!(
+            target: "duplex_desk_latency",
+            "ui_latency frames={} decode_done->ui_swap avg={}us max={}us, recv->ui_swap avg={}us max={}us, decode_submit->ui_swap avg={}us max={}us",
+            self.frames,
+            self.viewer_decode_done_to_ui_swap.avg_us(),
+            self.viewer_decode_done_to_ui_swap.max_us,
+            self.viewer_recv_to_ui_swap.avg_us(),
+            self.viewer_recv_to_ui_swap.max_us,
+            self.viewer_decode_submit_to_ui_swap.avg_us(),
+            self.viewer_decode_submit_to_ui_swap.max_us,
+        );
+
+        self.last_log_us = now_us;
+        self.frames = 0;
+        self.viewer_decode_done_to_ui_swap.reset();
+        self.viewer_recv_to_ui_swap.reset();
+        self.viewer_decode_submit_to_ui_swap.reset();
+    }
+}
+
 #[derive(Live, LiveHook)]
 pub struct App {
     #[live]
@@ -247,6 +358,8 @@ pub struct App {
     task_rx: ToUIReceiver<TaskEvent>,
     #[rust(VideoFrameTexture::default())]
     video: VideoFrameTexture,
+    #[rust(UiLatencyStats::default())]
+    ui_latency: UiLatencyStats,
     #[rust(None)]
     host_handle: Option<HostTaskHandle>,
     #[rust(None)]
@@ -265,6 +378,8 @@ pub struct App {
     device_code: String,
     #[rust(false)]
     viewer_authorized: bool,
+    #[rust(false)]
+    host_session_active: bool,
     #[rust(false)]
     panel_collapsed: bool,
 }
@@ -303,17 +418,20 @@ impl MatchEvent for App {
         self.ui.text_input(ids!(bitrate_input)).set_text(cx, "4000");
 
         self.mode = AppMode::Idle;
+        self.host_session_active = false;
         self.update_mode_label(cx);
         self.set_remote(cx, "-");
         self.set_status(
             cx,
             "Idle. Connect as viewer or click Return Host to accept requests.",
         );
+        self.clear_video(cx);
         self.set_side_panel_collapsed(cx, false);
+        self.update_action_buttons(cx);
     }
 
     fn handle_signal(&mut self, cx: &mut Cx) {
-        let mut latest_frame = None;
+        let mut latest_frame: Option<UiFrame> = None;
 
         while let Ok(event) = self.task_rx.try_recv() {
             match event {
@@ -332,6 +450,7 @@ impl MatchEvent for App {
                     remote_addr,
                     device_name,
                 } => {
+                    self.host_session_active = true;
                     self.ui
                         .label(ids!(auth_remote_label))
                         .set_text(cx, &format!("Remote: {remote_addr}"));
@@ -341,29 +460,57 @@ impl MatchEvent for App {
                     self.ui.mp_modal_widget(ids!(auth_modal)).open(cx);
                     self.set_remote(cx, &remote_addr.to_string());
                     self.set_status(cx, "Incoming control request");
+                    self.update_action_buttons(cx);
+                }
+                TaskEvent::HostSessionEnded {
+                    message,
+                    peer_cancelled,
+                } => {
+                    if self.mode == AppMode::Host {
+                        self.host_session_active = false;
+                        self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
+                        self.set_remote(cx, "-");
+                        self.set_status(cx, &format!("Host ready. {message}"));
+                        self.clear_video(cx);
+                        self.update_action_buttons(cx);
+                        if peer_cancelled {
+                            self.show_notice(cx, "The remote side cancelled the connection.");
+                        }
+                    }
                 }
                 TaskEvent::HostStopped(message) => {
                     if self.mode == AppMode::Host {
                         self.host_handle = None;
+                        self.host_session_active = false;
                         self.mode = AppMode::Idle;
                         self.update_mode_label(cx);
+                        self.set_remote(cx, "-");
                         self.set_status(cx, &message);
+                        self.clear_video(cx);
+                        self.update_action_buttons(cx);
                     }
                 }
                 TaskEvent::ViewerConnected(addr) => {
                     if self.mode == AppMode::Viewer {
                         self.set_remote(cx, &addr.to_string());
-                        self.set_status(cx, &format!("Connected, waiting auth: {addr}"));
+                        self.set_status(
+                            cx,
+                            &format!(
+                                "Connected to {addr}. Waiting for the controlled computer to approve..."
+                            ),
+                        );
+                        self.update_action_buttons(cx);
                     }
                 }
                 TaskEvent::ViewerAuthResult { accepted, reason } => {
                     if self.mode == AppMode::Viewer {
                         self.viewer_authorized = accepted;
                         if accepted {
-                            self.set_status(cx, &format!("Viewer authorized: {reason}"));
+                            self.set_status(cx, &format!("Connected: {reason}"));
                         } else {
                             self.set_status(cx, &format!("Viewer rejected: {reason}"));
                         }
+                        self.update_action_buttons(cx);
                     }
                 }
                 TaskEvent::ViewerStopped(message) => {
@@ -375,28 +522,39 @@ impl MatchEvent for App {
                         self.update_mode_label(cx);
                         self.set_remote(cx, "-");
                         self.set_status(cx, &message);
+                        self.clear_video(cx);
+                        self.update_action_buttons(cx);
+                        if is_peer_cancel_message(&message) {
+                            self.show_notice(cx, "The remote side cancelled the connection.");
+                        }
                     }
                 }
             }
         }
 
-        if let Some(frame) = latest_frame {
+        if let Some(frame_event) = latest_frame {
             if self.video.update_frame(
                 cx,
-                &frame.data,
-                frame.width as usize,
-                frame.height as usize,
-                frame.stride as usize,
+                &frame_event.frame.data,
+                frame_event.frame.width as usize,
+                frame_event.frame.height as usize,
+                frame_event.frame.stride as usize,
             ) {
                 let image = self.ui.image(ids!(video));
                 image.set_texture(cx, self.video.texture());
                 image.redraw(cx);
+
+                if let Some(telemetry) = frame_event.telemetry.as_ref() {
+                    let ui_swap_us = mono_now_us();
+                    self.ui_latency.observe(telemetry, ui_swap_us);
+                    self.ui_latency.maybe_log();
+                }
             }
         }
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        if self.ui.mp_button(ids!(connect_btn)).clicked(actions) {
+        if self.mode != AppMode::Viewer && self.ui.mp_button(ids!(connect_btn)).clicked(actions) {
             let target = self.ui.text_input(ids!(target_input)).text();
             let target = target.trim();
             if target.is_empty() {
@@ -419,8 +577,12 @@ impl MatchEvent for App {
             self.set_side_panel_collapsed(cx, !self.panel_collapsed);
         }
 
-        if self.ui.mp_button(ids!(host_btn)).clicked(actions) {
+        if self.mode != AppMode::Host && self.ui.mp_button(ids!(host_btn)).clicked(actions) {
             self.start_host_mode(cx);
+        }
+
+        if self.ui.mp_button(ids!(cancel_btn)).clicked(actions) {
+            self.cancel_current_connection(cx);
         }
 
         if self.ui.mp_button(ids!(auth_allow_btn)).clicked(actions) {
@@ -429,6 +591,8 @@ impl MatchEvent for App {
             }
             self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
             self.set_status(cx, "Auth approved");
+            self.host_session_active = true;
+            self.update_action_buttons(cx);
         }
 
         if self.ui.mp_button(ids!(auth_reject_btn)).clicked(actions) {
@@ -437,6 +601,9 @@ impl MatchEvent for App {
             }
             self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
             self.set_status(cx, "Auth rejected");
+            self.host_session_active = false;
+            self.set_remote(cx, "-");
+            self.update_action_buttons(cx);
         }
 
         if self
@@ -449,6 +616,21 @@ impl MatchEvent for App {
             }
             self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
             self.set_status(cx, "Auth dismissed");
+            self.host_session_active = false;
+            self.set_remote(cx, "-");
+            self.update_action_buttons(cx);
+        }
+
+        if self.ui.mp_button(ids!(notice_ok_btn)).clicked(actions) {
+            self.ui.mp_modal_widget(ids!(notice_modal)).close(cx);
+        }
+
+        if self
+            .ui
+            .mp_modal_widget(ids!(notice_modal))
+            .close_requested(actions)
+        {
+            self.ui.mp_modal_widget(ids!(notice_modal)).close(cx);
         }
     }
 }
@@ -485,6 +667,70 @@ impl App {
         self.ui
             .label(ids!(remote_label))
             .set_text(cx, &format!("Remote: {remote}"));
+    }
+
+    fn show_notice(&mut self, cx: &mut Cx, message: &str) {
+        self.ui
+            .label(ids!(notice_message_label))
+            .set_text(cx, message);
+        self.ui.mp_modal_widget(ids!(notice_modal)).open(cx);
+    }
+
+    fn clear_video(&mut self, cx: &mut Cx) {
+        self.video.clear();
+        let image = self.ui.image(ids!(video));
+        image.set_texture(cx, None);
+        image.redraw(cx);
+    }
+
+    fn update_action_buttons(&mut self, cx: &mut Cx) {
+        let viewer_active = self.mode == AppMode::Viewer;
+        let host_active = self.mode == AppMode::Host;
+        let show_cancel = viewer_active || (host_active && self.host_session_active);
+
+        self.ui
+            .widget(ids!(cancel_btn))
+            .set_visible(cx, show_cancel);
+        self.ui
+            .widget(ids!(connect_btn))
+            .set_visible(cx, !viewer_active);
+        self.ui
+            .widget(ids!(host_btn))
+            .set_visible(cx, !viewer_active);
+
+        let host_btn_text = if host_active {
+            "Hosting"
+        } else {
+            "Return Host"
+        };
+        self.ui
+            .widget(ids!(host_btn))
+            .apply_over(cx, live! { text: (host_btn_text) });
+    }
+
+    fn cancel_current_connection(&mut self, cx: &mut Cx) {
+        match self.mode {
+            AppMode::Viewer => {
+                self.stop_viewer_mode();
+                self.mode = AppMode::Idle;
+                self.update_mode_label(cx);
+                self.set_remote(cx, "-");
+                self.set_status(cx, "Connection cancelled");
+                self.clear_video(cx);
+            }
+            AppMode::Host => {
+                if let Some(handle) = self.host_handle.as_ref() {
+                    handle.disconnect_session();
+                }
+                self.host_session_active = false;
+                self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
+                self.set_remote(cx, "-");
+                self.set_status(cx, "Connection cancelled");
+                self.clear_video(cx);
+            }
+            AppMode::Idle => {}
+        }
+        self.update_action_buttons(cx);
     }
 
     fn update_mode_label(&mut self, cx: &mut Cx) {
@@ -565,6 +811,7 @@ impl App {
         if let Some(handle) = self.host_handle.take() {
             handle.stop();
         }
+        self.host_session_active = false;
     }
 
     fn stop_viewer_mode(&mut self) {
@@ -579,6 +826,8 @@ impl App {
     fn start_host_mode(&mut self, cx: &mut Cx) {
         self.stop_viewer_mode();
         self.stop_host_mode();
+        self.host_session_active = false;
+        self.clear_video(cx);
 
         let bind_text = self.ui.text_input(ids!(host_bind_input)).text();
         self.host_bind = if bind_text.trim().is_empty() {
@@ -602,6 +851,7 @@ impl App {
                 self.set_status(cx, &format!("Invalid host bind address: {err}"));
                 self.mode = AppMode::Idle;
                 self.update_mode_label(cx);
+                self.update_action_buttons(cx);
                 return;
             }
         };
@@ -614,11 +864,14 @@ impl App {
         self.mode = AppMode::Host;
         self.update_mode_label(cx);
         self.set_status(cx, "Starting host listener...");
+        self.set_remote(cx, "-");
+        self.update_action_buttons(cx);
     }
 
     fn start_viewer_mode(&mut self, cx: &mut Cx, host_addr: SocketAddr) {
         self.stop_host_mode();
         self.stop_viewer_mode();
+        self.clear_video(cx);
 
         let viewer_code = self.ui.text_input(ids!(viewer_code_input)).text();
         let viewer_code = viewer_code.trim().to_string();
@@ -649,6 +902,7 @@ impl App {
         self.viewer_authorized = false;
         self.update_mode_label(cx);
         self.set_status(cx, &format!("Connecting viewer to {host_addr}..."));
+        self.update_action_buttons(cx);
     }
 
     fn send_input_event(&self, event: InputEvent) {
@@ -738,6 +992,11 @@ impl AppMain for App {
         self.match_event(cx, event);
         self.handle_remote_input(cx, event);
     }
+}
+
+fn is_peer_cancel_message(message: &str) -> bool {
+    message.contains("peer canceled connection")
+        || message.contains("session ended by host: Disconnected")
 }
 
 fn default_device_name() -> String {

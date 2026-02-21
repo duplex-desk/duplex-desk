@@ -59,7 +59,7 @@ impl VideoToolboxEncoder {
             return Err("width/height/fps must be non-zero".to_string());
         }
 
-        let (tx, rx) = mpsc::sync_channel::<EncodedPacket>(10);
+        let (tx, rx) = mpsc::sync_channel::<EncodedPacket>(1);
         let state = Arc::new(Mutex::new(CallbackState { sender: tx }));
         let state_ptr = Arc::as_ptr(&state) as *mut c_void;
 

@@ -93,7 +93,7 @@ impl WindowsCapturer {
         };
 
         let fps = if config.fps == 0 { 30 } else { config.fps };
-        let (frame_tx, frame_rx) = mpsc::sync_channel::<DuplexScapFrame>(5);
+        let (frame_tx, frame_rx) = mpsc::sync_channel::<DuplexScapFrame>(1);
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
 
         let join_handle = thread::spawn(move || {
