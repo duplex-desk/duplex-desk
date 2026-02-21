@@ -11,6 +11,7 @@ path = "src/lib.rs"
 makepad-components = { git = "https://github.com/Project-Robius-China/makepad-component", branch = "main", features = ["Modal", "Button", "Input", "Tooltip"] }
 duple-x-transport  = { path = "../duple-x-transport" }
 duple-x-scap       = { path = "../duple-x-scap" }
+duple-x-input      = { path = "../duple-x-input" }
 tokio              = { version = "1", features = ["full"] }
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
