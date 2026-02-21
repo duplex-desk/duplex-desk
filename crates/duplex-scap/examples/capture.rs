@@ -7,6 +7,15 @@ fn main() {
         return;
     }
 
+    let displays = ScreenCapturer::list_displays().unwrap();
+    println!("available displays: {}", displays.len());
+    for display in &displays {
+        println!(
+            "display id={} {}x{}",
+            display.display_id, display.width, display.height
+        );
+    }
+
     let mut capturer = ScreenCapturer::new();
     let rx = capturer.start(DuplexScapConfig::default()).unwrap();
 

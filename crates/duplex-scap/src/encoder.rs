@@ -1,4 +1,5 @@
 use crate::frame::DuplexScapFrame;
+#[cfg(target_os = "macos")]
 use duplex_proto::VideoPacket;
 
 /// Common encoder interface for platform implementations.

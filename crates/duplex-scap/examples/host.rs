@@ -1,7 +1,8 @@
+use std::sync::mpsc::{Receiver, TryRecvError};
+
+use duplex_codec::{EncodedPacket, VideoEncoder};
 use duplex_input::InputInjector;
-use duplex_scap::{
-    capturer::ScreenCapturer, config::DuplexScapConfig, encoder::VideoToolboxEncoder,
-};
+use duplex_scap::{capturer::ScreenCapturer, config::DuplexScapConfig};
 use duplex_transport::sender::Sender;
 
 #[tokio::main]
@@ -22,23 +23,6 @@ async fn main() {
 
     // 用首帧尺寸初始化编码器，避免分辨率不匹配。
     let first_frame = frame_rx.recv().expect("receive first frame");
-    let (encoder, packet_rx) = VideoToolboxEncoder::new(
-        first_frame.width,
-        first_frame.height,
-        fps,
-        4000, // 4 Mbps
-    )
-    .expect("create encoder");
-    encoder.encode(&first_frame).expect("encode first frame");
-
-    // 采集 -> 编码
-    std::thread::spawn(move || {
-        while let Ok(frame) = frame_rx.recv() {
-            if let Err(err) = encoder.encode(&frame) {
-                eprintln!("encode error: {err}");
-            }
-        }
-    });
 
     // 网络发送
     let sender = Sender::bind("0.0.0.0:5000".parse().expect("parse bind addr"))
@@ -62,11 +46,31 @@ async fn main() {
         }
     };
 
-    let (packet_tx, mut packet_async_rx) = tokio::sync::mpsc::unbounded_channel();
-    std::thread::spawn(move || {
-        while let Ok(packet) = packet_rx.recv() {
-            if packet_tx.send(packet).is_err() {
-                break;
+    let (packet_tx, mut packet_async_rx) = tokio::sync::mpsc::unbounded_channel::<EncodedPacket>();
+    tokio::task::spawn_blocking(move || {
+        let (encoder, packet_rx) =
+            match VideoEncoder::new(first_frame.width, first_frame.height, fps, 4000) {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!("create encoder failed: {err}");
+                    return;
+                }
+            };
+        if let Err(err) = encoder.encode(&first_frame) {
+            eprintln!("encode first frame failed: {err}");
+            return;
+        }
+        if !drain_encoded_packets(&packet_rx, &packet_tx) {
+            return;
+        }
+
+        while let Ok(frame) = frame_rx.recv() {
+            if let Err(err) = encoder.encode(&frame) {
+                eprintln!("encode error: {err}");
+                continue;
+            }
+            if !drain_encoded_packets(&packet_rx, &packet_tx) {
+                return;
             }
         }
     });
@@ -105,4 +109,21 @@ async fn main() {
     }
 
     let _ = capturer.stop();
+}
+
+fn drain_encoded_packets(
+    packet_rx: &Receiver<EncodedPacket>,
+    packet_tx: &tokio::sync::mpsc::UnboundedSender<EncodedPacket>,
+) -> bool {
+    loop {
+        match packet_rx.try_recv() {
+            Ok(packet) => {
+                if packet_tx.send(packet).is_err() {
+                    return false;
+                }
+            }
+            Err(TryRecvError::Empty) => return true,
+            Err(TryRecvError::Disconnected) => return false,
+        }
+    }
 }

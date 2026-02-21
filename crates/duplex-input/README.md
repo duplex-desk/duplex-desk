@@ -17,7 +17,8 @@ It reuses `duplex-proto` event definitions:
 ## Platform Support
 
 - macOS: implemented (Core Graphics `CGEvent`)
-- Windows/Linux: placeholder implementation returning `Unsupported`
+- Windows: implemented (`SendInput`, normalized absolute cursor + keyboard/mouse injection)
+- Linux: placeholder implementation returning `Unsupported`
 
 ## Typical Usage
 

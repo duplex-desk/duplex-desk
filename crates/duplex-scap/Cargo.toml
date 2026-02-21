@@ -16,6 +16,7 @@ tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 duplex-transport = { workspace = true }
 duplex-input = { workspace = true }
+duplex-codec = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { workspace = true }
@@ -25,3 +26,13 @@ objc2-core-media = { workspace = true }
 objc2-core-video = { workspace = true }
 block2 = { workspace = true }
 dispatch2 = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.56", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+] }

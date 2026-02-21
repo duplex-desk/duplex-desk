@@ -1,13 +1,10 @@
 use std::net::SocketAddr;
 
+use duplex_codec::{EncodedPacket, VideoEncoder};
 use duplex_input::InputInjector;
 use duplex_proto::{ControlMessage, SessionState};
-use duplex_scap::{
-    capturer::ScreenCapturer,
-    config::DuplexScapConfig,
-    encoder::{EncodedPacket, VideoToolboxEncoder},
-};
-use duplex_transport::{sender::Sender, ClientPacket};
+use duplex_scap::{capturer::ScreenCapturer, config::DuplexScapConfig};
+use duplex_transport::{ClientPacket, sender::Sender};
 use makepad_components::makepad_widgets::ToUISender;
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -266,7 +263,8 @@ async fn wait_stop(stop_rx: &mut watch::Receiver<bool>) {
     let _ = stop_rx.changed().await;
 }
 
-fn start_capture_pipeline() -> Result<(ScreenCapturer, tokio::sync::mpsc::Receiver<EncodedPacket>), String> {
+fn start_capture_pipeline()
+-> Result<(ScreenCapturer, tokio::sync::mpsc::Receiver<EncodedPacket>), String> {
     if !ScreenCapturer::check_permissions() {
         ScreenCapturer::request_permissions();
         return Err("screen recording permission is required".to_string());
@@ -283,25 +281,33 @@ fn start_capture_pipeline() -> Result<(ScreenCapturer, tokio::sync::mpsc::Receiv
     let first_frame = frame_rx
         .recv()
         .map_err(|e| format!("failed to receive first frame: {e}"))?;
-    let (encoder, packet_rx) =
-        VideoToolboxEncoder::new(first_frame.width, first_frame.height, fps, 4000)
-            .map_err(|e| format!("failed to create encoder: {e}"))?;
-    encoder
-        .encode(&first_frame)
-        .map_err(|e| format!("failed to encode first frame: {e}"))?;
-
+    let (packet_tx, packet_async_rx) = mpsc::channel(32);
     std::thread::spawn(move || {
+        let (encoder, packet_rx) =
+            match VideoEncoder::new(first_frame.width, first_frame.height, fps, 4000) {
+                Ok(v) => v,
+                Err(err) => {
+                    tracing::warn!("failed to create encoder: {err}");
+                    return;
+                }
+            };
+
+        let packet_tx_forward = packet_tx.clone();
+        std::thread::spawn(move || {
+            while let Ok(packet) = packet_rx.recv() {
+                let _ = packet_tx_forward.try_send(packet);
+            }
+        });
+
+        if let Err(err) = encoder.encode(&first_frame) {
+            tracing::warn!("failed to encode first frame: {err}");
+            return;
+        }
+
         while let Ok(frame) = frame_rx.recv() {
             if let Err(err) = encoder.encode(&frame) {
                 tracing::warn!("encode error: {err}");
             }
-        }
-    });
-
-    let (packet_tx, packet_async_rx) = mpsc::channel(32);
-    std::thread::spawn(move || {
-        while let Ok(packet) = packet_rx.recv() {
-            let _ = packet_tx.try_send(packet);
         }
     });
 

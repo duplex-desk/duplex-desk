@@ -1,9 +1,10 @@
 use std::net::SocketAddr;
 
+use duplex_codec::{EncodedPacket, VideoDecoder};
 use duplex_input::InputEvent;
 use duplex_proto::{ControlMessage, SessionState};
-use duplex_scap::{decoder::VideoToolboxDecoder, encoder::EncodedPacket, frame::DuplexScapFrame};
-use duplex_transport::{receiver::Receiver, ServerPacket};
+use duplex_scap::frame::DuplexScapFrame;
+use duplex_transport::{ServerPacket, receiver::Receiver};
 use makepad_components::makepad_widgets::ToUISender;
 use tokio::sync::{mpsc::UnboundedReceiver, watch};
 
@@ -87,7 +88,7 @@ async fn run_viewer(
         .await
         .map_err(|e| format!("failed to send auth request: {e}"))?;
 
-    let mut decoder: Option<VideoToolboxDecoder> = None;
+    let mut decoder: Option<VideoDecoder> = None;
     let mut decoded_rx: Option<std::sync::mpsc::Receiver<DuplexScapFrame>> = None;
     let mut input_open = true;
     let mut authorized = false;
@@ -153,7 +154,7 @@ async fn run_viewer(
                                 timestamp_us: video_frame.timestamp_us,
                             };
 
-                            match VideoToolboxDecoder::from_keyframe(&key_packet) {
+                            match VideoDecoder::from_keyframe(&key_packet) {
                                 Ok((dec, rx)) => {
                                     decoder = Some(dec);
                                     decoded_rx = Some(rx);

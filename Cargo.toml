@@ -14,6 +14,7 @@ duplex-proto = { path = "crates/duplex-proto" }
 duplex-input = { path = "crates/duplex-input" }
 duplex-transport = { path = "crates/duplex-transport" }
 duplex-scap = { path = "crates/duplex-scap" }
+duplex-codec = { path = "crates/duplex-codec" }
 
 # App/UI
 makepad-components = { git = "https://github.com/Project-Robius-China/makepad-component", branch = "main", features = ["Modal", "Button", "Input", "Tooltip"] }

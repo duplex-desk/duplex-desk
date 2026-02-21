@@ -10,8 +10,8 @@ use makepad_components::modal::MpModalWidgetWidgetRefExt;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
-    host_task::{start_host_task, HostTaskHandle},
-    receiver_task::{start_viewer_task, ViewerTaskHandle},
+    host_task::{HostTaskHandle, start_host_task},
+    receiver_task::{ViewerTaskHandle, start_viewer_task},
     task_event::TaskEvent,
     video_view::VideoFrameTexture,
 };
@@ -305,7 +305,10 @@ impl MatchEvent for App {
         self.mode = AppMode::Idle;
         self.update_mode_label(cx);
         self.set_remote(cx, "-");
-        self.set_status(cx, "Idle. Connect as viewer or click Return Host to accept requests.");
+        self.set_status(
+            cx,
+            "Idle. Connect as viewer or click Return Host to accept requests.",
+        );
         self.set_side_panel_collapsed(cx, false);
     }
 
@@ -321,9 +324,7 @@ impl MatchEvent for App {
                     if self.mode == AppMode::Host {
                         self.set_status(
                             cx,
-                            &format!(
-                                "Host listener ready: {addr} (capture starts after approval)"
-                            ),
+                            &format!("Host listener ready: {addr} (capture starts after approval)"),
                         );
                     }
                 }
@@ -498,7 +499,9 @@ impl App {
     fn set_side_panel_collapsed(&mut self, cx: &mut Cx, collapsed: bool) {
         self.panel_collapsed = collapsed;
 
-        self.ui.view(ids!(panel_content)).set_visible(cx, !collapsed);
+        self.ui
+            .view(ids!(panel_content))
+            .set_visible(cx, !collapsed);
         self.ui
             .widget(ids!(panel_title))
             .set_visible(cx, !collapsed);
@@ -512,7 +515,9 @@ impl App {
             .apply_over(cx, live! { text: (toggle_icon) });
 
         if collapsed {
-            self.ui.widget(ids!(panel_title)).apply_over(cx, live! { width: 0.0 });
+            self.ui
+                .widget(ids!(panel_title))
+                .apply_over(cx, live! { width: 0.0 });
 
             self.ui.view(ids!(panel_header)).apply_over(
                 cx,
@@ -531,7 +536,9 @@ impl App {
                 },
             );
         } else {
-            self.ui.widget(ids!(panel_title)).apply_over(cx, live! { width: Fill });
+            self.ui
+                .widget(ids!(panel_title))
+                .apply_over(cx, live! { width: Fill });
 
             self.ui.view(ids!(panel_header)).apply_over(
                 cx,

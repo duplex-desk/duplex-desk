@@ -34,14 +34,23 @@ impl ScreenCapturer {
         self.inner.stop()
     }
 
-    #[cfg(target_os = "macos")]
     pub fn check_permissions() -> bool {
-        PlatformCapturer::check_permissions()
+        #[cfg(target_os = "macos")]
+        {
+            return PlatformCapturer::check_permissions();
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            true
+        }
     }
 
-    #[cfg(target_os = "macos")]
     pub fn request_permissions() {
-        PlatformCapturer::request_permissions();
+        #[cfg(target_os = "macos")]
+        {
+            PlatformCapturer::request_permissions();
+        }
     }
 }
 

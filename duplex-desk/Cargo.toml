@@ -11,6 +11,7 @@ path = "src/lib.rs"
 makepad-components = { workspace = true }
 duplex-transport = { workspace = true }
 duplex-scap = { workspace = true }
+duplex-codec = { workspace = true }
 duplex-input = { workspace = true }
 duplex-proto = { workspace = true }
 tokio = { workspace = true }
