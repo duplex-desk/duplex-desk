@@ -1,0 +1,16 @@
+[package]
+name    = "duplex-desk"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "duplex_desk"
+path = "src/lib.rs"
+
+[dependencies]
+makepad-components = { git = "https://github.com/Project-Robius-China/makepad-component", branch = "main", features = ["Modal", "Button", "Input", "Tooltip"] }
+duple-x-transport  = { path = "../duple-x-transport" }
+duple-x-scap       = { path = "../duple-x-scap" }
+tokio              = { version = "1", features = ["full"] }
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
