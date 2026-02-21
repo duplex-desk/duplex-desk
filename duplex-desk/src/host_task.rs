@@ -1,9 +1,11 @@
 use std::net::SocketAddr;
 
-use duple_x_input::InputInjector;
-use duple_x_proto::{ControlMessage, SessionState};
-use duple_x_scap::{
-    capturer::ScreenCapturer, config::DuplexScapConfig, encoder::VideoToolboxEncoder,
+use duplex_input::InputInjector;
+use duplex_proto::{ControlMessage, SessionState};
+use duplex_scap::{
+    capturer::ScreenCapturer,
+    config::DuplexScapConfig,
+    encoder::{EncodedPacket, VideoToolboxEncoder},
 };
 use duplex_transport::{sender::Sender, ClientPacket};
 use makepad_components::makepad_widgets::ToUISender;
@@ -81,37 +83,6 @@ async fn run_host(
     mut auth_rx: UnboundedReceiver<bool>,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Result<(), String> {
-    if !ScreenCapturer::check_permissions() {
-        ScreenCapturer::request_permissions();
-        return Err("screen recording permission is required".to_string());
-    }
-
-    let config = DuplexScapConfig::default();
-    let fps = config.fps;
-
-    let mut capturer = ScreenCapturer::new();
-    let frame_rx = capturer
-        .start(config)
-        .map_err(|e| format!("failed to start capturer: {e}"))?;
-
-    let first_frame = frame_rx
-        .recv()
-        .map_err(|e| format!("failed to receive first frame: {e}"))?;
-    let (encoder, packet_rx) =
-        VideoToolboxEncoder::new(first_frame.width, first_frame.height, fps, 4000)
-            .map_err(|e| format!("failed to create encoder: {e}"))?;
-    encoder
-        .encode(&first_frame)
-        .map_err(|e| format!("failed to encode first frame: {e}"))?;
-
-    std::thread::spawn(move || {
-        while let Ok(frame) = frame_rx.recv() {
-            if let Err(err) = encoder.encode(&frame) {
-                tracing::warn!("encode error: {err}");
-            }
-        }
-    });
-
     let sender = Sender::bind(bind_addr)
         .await
         .map_err(|e| format!("failed to bind host sender: {e}"))?;
@@ -122,17 +93,9 @@ async fn run_host(
     }
     let injector = InputInjector::new().ok();
 
-    let (packet_tx, mut packet_async_rx) = tokio::sync::mpsc::channel(32);
-    std::thread::spawn(move || {
-        while let Ok(packet) = packet_rx.recv() {
-            let _ = packet_tx.try_send(packet);
-        }
-    });
-
     'accept_loop: loop {
         let session = tokio::select! {
             _ = wait_stop(&mut stop_rx) => {
-                let _ = capturer.stop();
                 return Ok(());
             }
             accept_result = sender.accept() => {
@@ -155,7 +118,6 @@ async fn run_host(
         let (device_name, incoming_code) = loop {
             let packet = tokio::select! {
                 _ = wait_stop(&mut stop_rx) => {
-                    let _ = capturer.stop();
                     return Ok(());
                 }
                 recv_result = input_session.recv_client_packet() => {
@@ -204,7 +166,6 @@ async fn run_host(
 
         let approved = tokio::select! {
             _ = wait_stop(&mut stop_rx) => {
-                let _ = capturer.stop();
                 return Ok(());
             }
             decision = auth_rx.recv() => decision.unwrap_or(false),
@@ -224,6 +185,25 @@ async fn run_host(
                 .await;
             continue;
         }
+
+        // Start capture/encode only after local user approval.
+        let (mut capturer, mut packet_async_rx) = match start_capture_pipeline() {
+            Ok(v) => v,
+            Err(err) => {
+                let _ = video_session
+                    .send_control(&ControlMessage::AuthDecision {
+                        accepted: false,
+                        reason: err.clone(),
+                    })
+                    .await;
+                let _ = video_session
+                    .send_control(&ControlMessage::SessionState {
+                        state: SessionState::Rejected,
+                    })
+                    .await;
+                continue 'accept_loop;
+            }
+        };
 
         let _ = video_session
             .send_control(&ControlMessage::AuthDecision {
@@ -274,6 +254,8 @@ async fn run_host(
                 }
             }
         }
+
+        let _ = capturer.stop();
     }
 }
 
@@ -282,4 +264,46 @@ async fn wait_stop(stop_rx: &mut watch::Receiver<bool>) {
         return;
     }
     let _ = stop_rx.changed().await;
+}
+
+fn start_capture_pipeline() -> Result<(ScreenCapturer, tokio::sync::mpsc::Receiver<EncodedPacket>), String> {
+    if !ScreenCapturer::check_permissions() {
+        ScreenCapturer::request_permissions();
+        return Err("screen recording permission is required".to_string());
+    }
+
+    let config = DuplexScapConfig::default();
+    let fps = config.fps;
+
+    let mut capturer = ScreenCapturer::new();
+    let frame_rx = capturer
+        .start(config)
+        .map_err(|e| format!("failed to start capturer: {e}"))?;
+
+    let first_frame = frame_rx
+        .recv()
+        .map_err(|e| format!("failed to receive first frame: {e}"))?;
+    let (encoder, packet_rx) =
+        VideoToolboxEncoder::new(first_frame.width, first_frame.height, fps, 4000)
+            .map_err(|e| format!("failed to create encoder: {e}"))?;
+    encoder
+        .encode(&first_frame)
+        .map_err(|e| format!("failed to encode first frame: {e}"))?;
+
+    std::thread::spawn(move || {
+        while let Ok(frame) = frame_rx.recv() {
+            if let Err(err) = encoder.encode(&frame) {
+                tracing::warn!("encode error: {err}");
+            }
+        }
+    });
+
+    let (packet_tx, packet_async_rx) = mpsc::channel(32);
+    std::thread::spawn(move || {
+        while let Ok(packet) = packet_rx.recv() {
+            let _ = packet_tx.try_send(packet);
+        }
+    });
+
+    Ok((capturer, packet_async_rx))
 }

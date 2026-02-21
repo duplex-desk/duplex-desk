@@ -1,0 +1,12 @@
+[package]
+name = "duplex-proto"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+name = "duplex_proto"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+bincode = { workspace = true }

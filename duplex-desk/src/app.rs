@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use duple_x_input::{InputEvent, Modifiers, MouseButton as InputMouseButton, NormalizedPos};
+use duplex_input::{InputEvent, Modifiers, MouseButton as InputMouseButton, NormalizedPos};
 use makepad_components::button::MpButtonWidgetRefExt;
 use makepad_components::makepad_widgets::*;
 use makepad_components::modal::MpModalWidgetWidgetRefExt;
@@ -62,110 +62,131 @@ live_design! {
                                 color: #0f172acc
                             }
 
-                            title = <Label> {
-                                draw_text: { color: #f8fafc, }
-                                text: "Connection Panel",
-                            }
-
-                            mode_label = <Label> {
-                                draw_text: { color: #cbd5e1, }
-                                text: "Mode: IDLE",
-                            }
-
-                            status_text = <Label> {
-                                draw_text: { color: #94a3b8, }
-                                text: "Initializing...",
-                            }
-
-                            remote_label = <Label> {
-                                draw_text: { color: #94a3b8, }
-                                text: "Remote: -",
-                            }
-
-                            <View> {
-                                width: Fill,
-                                height: 1,
-                                show_bg: true,
-                                draw_bg: { color: #334155 }
-                            }
-
-                            settings_title = <Label> {
-                                draw_text: { color: #f8fafc, }
-                                text: "Settings",
-                            }
-
-                            host_bind_input = <MpInput> {
-                                width: Fill,
-                                empty_text: "host bind address"
-                            }
-
-                            device_name_input = <MpInput> {
-                                width: Fill,
-                                empty_text: "device name"
-                            }
-
-                            code_row = <View> {
-                                width: Fill,
-                                height: Fit,
-                                flow: Right,
-                                spacing: 6,
-                                align: { y: 0.5 },
-
-                                <Label> {
-                                    draw_text: { color: #94a3b8, }
-                                    text: "Device Code:"
-                                }
-
-                                device_code_value = <Label> {
-                                    draw_text: { color: #f8fafc, }
-                                    text: "------"
-                                }
-                            }
-
-                            fps_input = <MpInput> {
-                                width: Fill,
-                                empty_text: "fps (next stage)"
-                            }
-
-                            bitrate_input = <MpInput> {
-                                width: Fill,
-                                empty_text: "bitrate kbps (next stage)"
-                            }
-
-                            <View> {
-                                width: Fill,
-                                height: 1,
-                                show_bg: true,
-                                draw_bg: { color: #334155 }
-                            }
-
-                            viewer_title = <Label> {
-                                draw_text: { color: #f8fafc, }
-                                text: "Viewer Connect",
-                            }
-
-                            target_input = <MpInput> {
-                                width: Fill,
-                                empty_text: "target ip:port"
-                            }
-
-                            viewer_code_input = <MpInput> {
-                                width: Fill,
-                                empty_text: "target device code"
-                            }
-
-                            btn_row = <View> {
+                            panel_header = <View> {
                                 width: Fill,
                                 height: Fit,
                                 flow: Right,
                                 spacing: 8,
+                                align: { x: 1.0, y: 0.5 }
 
-                                connect_btn = <MpButtonPrimary> {
-                                    text: "Connect",
+                                panel_title = <Label> {
+                                    width: Fill,
+                                    draw_text: { color: #f8fafc, }
+                                    text: "Connection Panel",
                                 }
 
-                                host_btn = <MpButtonSecondary> {
-                                    text: "Return Host",
+                                panel_toggle_btn = <MpButtonSecondary> {
+                                    text: "<",
+                                }
+                            }
+
+                            panel_content = <View> {
+                                width: Fill,
+                                height: Fill,
+                                flow: Down,
+                                spacing: 10,
+
+                                mode_label = <Label> {
+                                    draw_text: { color: #cbd5e1, }
+                                    text: "Mode: IDLE",
+                                }
+
+                                status_text = <Label> {
+                                    width: Fill,
+                                    draw_text: { color: #94a3b8, wrap: Word }
+                                    text: "Initializing...",
+                                }
+
+                                remote_label = <Label> {
+                                    draw_text: { color: #94a3b8, }
+                                    text: "Remote: -",
+                                }
+
+                                <View> {
+                                    width: Fill,
+                                    height: 1,
+                                    show_bg: true,
+                                    draw_bg: { color: #334155 }
+                                }
+
+                                settings_title = <Label> {
+                                    draw_text: { color: #f8fafc, }
+                                    text: "Settings",
+                                }
+
+                                host_bind_input = <MpInput> {
+                                    width: Fill,
+                                    empty_text: "host bind address"
+                                }
+
+                                device_name_input = <MpInput> {
+                                    width: Fill,
+                                    empty_text: "device name"
+                                }
+
+                                code_row = <View> {
+                                    width: Fill,
+                                    height: Fit,
+                                    flow: Right,
+                                    spacing: 6,
+                                    align: { y: 0.5 },
+
+                                    <Label> {
+                                        draw_text: { color: #94a3b8, }
+                                        text: "Device Code:"
+                                    }
+
+                                    device_code_value = <Label> {
+                                        draw_text: { color: #f8fafc, }
+                                        text: "------"
+                                    }
+                                }
+
+                                fps_input = <MpInput> {
+                                    width: Fill,
+                                    empty_text: "fps (next stage)"
+                                }
+
+                                bitrate_input = <MpInput> {
+                                    width: Fill,
+                                    empty_text: "bitrate kbps (next stage)"
+                                }
+
+                                <View> {
+                                    width: Fill,
+                                    height: 1,
+                                    show_bg: true,
+                                    draw_bg: { color: #334155 }
+                                }
+
+                                viewer_title = <Label> {
+                                    draw_text: { color: #f8fafc, }
+                                    text: "Viewer Connect",
+                                }
+
+                                target_input = <MpInput> {
+                                    width: Fill,
+                                    empty_text: "target ip:port"
+                                }
+
+                                viewer_code_input = <MpInput> {
+                                    width: Fill,
+                                    empty_text: "target device code"
+                                }
+
+                                btn_row = <View> {
+                                    width: Fill,
+                                    height: Fit,
+                                    flow: Right,
+                                    spacing: 8,
+
+                                    connect_btn = <MpButtonPrimary> {
+                                        text: "Connect",
+                                    }
+
+                                    host_btn = <MpButtonSecondary> {
+                                        text: "Return Host",
+                                    }
                                 }
                             }
                         }
@@ -244,6 +265,8 @@ pub struct App {
     device_code: String,
     #[rust(false)]
     viewer_authorized: bool,
+    #[rust(false)]
+    panel_collapsed: bool,
 }
 
 impl LiveRegister for App {
@@ -279,12 +302,15 @@ impl MatchEvent for App {
         self.ui.text_input(ids!(fps_input)).set_text(cx, "30");
         self.ui.text_input(ids!(bitrate_input)).set_text(cx, "4000");
 
-        self.start_host_mode(cx);
+        self.mode = AppMode::Idle;
+        self.update_mode_label(cx);
+        self.set_remote(cx, "-");
+        self.set_status(cx, "Idle. Connect as viewer or click Return Host to accept requests.");
+        self.set_side_panel_collapsed(cx, false);
     }
 
     fn handle_signal(&mut self, cx: &mut Cx) {
         let mut latest_frame = None;
-        let mut restart_host_after_viewer = false;
 
         while let Ok(event) = self.task_rx.try_recv() {
             match event {
@@ -293,7 +319,12 @@ impl MatchEvent for App {
                 }
                 TaskEvent::HostStarted(addr) => {
                     if self.mode == AppMode::Host {
-                        self.set_status(cx, &format!("Host listening: {addr}"));
+                        self.set_status(
+                            cx,
+                            &format!(
+                                "Host listener ready: {addr} (capture starts after approval)"
+                            ),
+                        );
                     }
                 }
                 TaskEvent::HostAwaitingApproval {
@@ -313,6 +344,8 @@ impl MatchEvent for App {
                 TaskEvent::HostStopped(message) => {
                     if self.mode == AppMode::Host {
                         self.host_handle = None;
+                        self.mode = AppMode::Idle;
+                        self.update_mode_label(cx);
                         self.set_status(cx, &message);
                     }
                 }
@@ -337,8 +370,10 @@ impl MatchEvent for App {
                         self.viewer_handle = None;
                         self.input_tx = None;
                         self.viewer_authorized = false;
+                        self.mode = AppMode::Idle;
+                        self.update_mode_label(cx);
+                        self.set_remote(cx, "-");
                         self.set_status(cx, &message);
-                        restart_host_after_viewer = true;
                     }
                 }
             }
@@ -356,10 +391,6 @@ impl MatchEvent for App {
                 image.set_texture(cx, self.video.texture());
                 image.redraw(cx);
             }
-        }
-
-        if restart_host_after_viewer {
-            self.start_host_mode(cx);
         }
     }
 
@@ -381,6 +412,10 @@ impl MatchEvent for App {
             };
 
             self.start_viewer_mode(cx, host_addr);
+        }
+
+        if self.ui.mp_button(ids!(panel_toggle_btn)).clicked(actions) {
+            self.set_side_panel_collapsed(cx, !self.panel_collapsed);
         }
 
         if self.ui.mp_button(ids!(host_btn)).clicked(actions) {
@@ -460,6 +495,65 @@ impl App {
         self.ui.label(ids!(mode_label)).set_text(cx, text);
     }
 
+    fn set_side_panel_collapsed(&mut self, cx: &mut Cx, collapsed: bool) {
+        self.panel_collapsed = collapsed;
+
+        self.ui.view(ids!(panel_content)).set_visible(cx, !collapsed);
+        self.ui
+            .widget(ids!(panel_title))
+            .set_visible(cx, !collapsed);
+        self.ui
+            .label(ids!(panel_title))
+            .set_text(cx, if collapsed { "" } else { "Connection Panel" });
+
+        let toggle_icon = if collapsed { ">" } else { "<" };
+        self.ui
+            .widget(ids!(panel_toggle_btn))
+            .apply_over(cx, live! { text: (toggle_icon) });
+
+        if collapsed {
+            self.ui.widget(ids!(panel_title)).apply_over(cx, live! { width: 0.0 });
+
+            self.ui.view(ids!(panel_header)).apply_over(
+                cx,
+                live! {
+                    height: Fill,
+                    align: { x: 0.5, y: 0.5 },
+                    spacing: 0.0
+                },
+            );
+
+            self.ui.view(ids!(side_panel)).apply_over(
+                cx,
+                live! {
+                    width: 56.0,
+                    padding: { left: 0.0, right: 0.0, top: 0.0, bottom: 0.0 }
+                },
+            );
+        } else {
+            self.ui.widget(ids!(panel_title)).apply_over(cx, live! { width: Fill });
+
+            self.ui.view(ids!(panel_header)).apply_over(
+                cx,
+                live! {
+                    height: Fit,
+                    align: { x: 1.0, y: 0.5 },
+                    spacing: 8.0
+                },
+            );
+
+            self.ui.view(ids!(side_panel)).apply_over(
+                cx,
+                live! {
+                    width: 360.0,
+                    padding: { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 }
+                },
+            );
+        }
+
+        self.ui.view(ids!(side_panel)).redraw(cx);
+    }
+
     fn stop_host_mode(&mut self) {
         if let Some(handle) = self.host_handle.take() {
             handle.stop();
@@ -512,7 +606,7 @@ impl App {
         ));
         self.mode = AppMode::Host;
         self.update_mode_label(cx);
-        self.set_status(cx, "Starting host service...");
+        self.set_status(cx, "Starting host listener...");
     }
 
     fn start_viewer_mode(&mut self, cx: &mut Cx, host_addr: SocketAddr) {

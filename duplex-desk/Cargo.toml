@@ -1,0 +1,18 @@
+[package]
+name = "duplex-desk"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+name = "duplex_desk"
+path = "src/lib.rs"
+
+[dependencies]
+makepad-components = { workspace = true }
+duplex-transport = { workspace = true }
+duplex-scap = { workspace = true }
+duplex-input = { workspace = true }
+duplex-proto = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

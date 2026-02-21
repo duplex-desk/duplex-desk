@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use duple_x_scap::frame::DuplexScapFrame;
+use duplex_scap::frame::DuplexScapFrame;
 
 #[derive(Debug)]
 pub enum TaskEvent {

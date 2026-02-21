@@ -1,0 +1,19 @@
+[package]
+name = "duplex-transport"
+version = "0.1.0"
+edition.workspace = true
+
+[lib]
+name = "duplex_transport"
+path = "src/lib.rs"
+
+[dependencies]
+quinn = { workspace = true }
+rustls = { workspace = true }
+rcgen = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+duplex-proto = { workspace = true }

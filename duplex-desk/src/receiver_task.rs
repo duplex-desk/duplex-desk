@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 
-use duple_x_input::InputEvent;
-use duple_x_proto::{ControlMessage, SessionState};
-use duple_x_scap::{decoder::VideoToolboxDecoder, encoder::EncodedPacket, frame::DuplexScapFrame};
+use duplex_input::InputEvent;
+use duplex_proto::{ControlMessage, SessionState};
+use duplex_scap::{decoder::VideoToolboxDecoder, encoder::EncodedPacket, frame::DuplexScapFrame};
 use duplex_transport::{receiver::Receiver, ServerPacket};
 use makepad_components::makepad_widgets::ToUISender;
 use tokio::sync::{mpsc::UnboundedReceiver, watch};

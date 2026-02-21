@@ -1,18 +1,53 @@
-[package]
-name    = "duplex-desk"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "duplex-desk",
+    "crates/*",
+]
+resolver = "3"
 
-[lib]
-name = "duplex_desk"
-path = "src/lib.rs"
+[workspace.package]
+edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
+# Workspace crates
+duplex-proto = { path = "crates/duplex-proto" }
+duplex-input = { path = "crates/duplex-input" }
+duplex-transport = { path = "crates/duplex-transport" }
+duplex-scap = { path = "crates/duplex-scap" }
+
+# App/UI
 makepad-components = { git = "https://github.com/Project-Robius-China/makepad-component", branch = "main", features = ["Modal", "Button", "Input", "Tooltip"] }
-duple-x-transport  = { path = "../duple-x-transport" }
-duple-x-scap       = { path = "../duple-x-scap" }
-duple-x-input      = { path = "../duple-x-input" }
-duple-x-proto      = { path = "../duple-x-proto" }
-tokio              = { version = "1", features = ["full"] }
-tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+# Shared runtime/logging
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
+
+# Shared protocol deps
+serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
+
+# Shared core deps
+thiserror = "2.0.18"
+cfg-if = "1.0.0"
+bytes = "1"
+
+# Transport deps
+quinn = "0.11"
+rustls = { version = "0.23", features = ["ring"] }
+rcgen = "0.13"
+
+# macOS input deps
+core-graphics = { version = "0.23", features = ["highsierra"] }
+
+# macOS capture/codec deps
+objc2 = "0.6.3"
+objc2-foundation = "0.3.2"
+objc2-screen-capture-kit = { version = "0.3.2", features = ["SCShareableContent", "SCStream"] }
+objc2-core-media = { version = "0.3.2", features = ["CMTime", "CMSampleBuffer"] }
+objc2-core-video = { version = "0.3.2", features = ["CVPixelBuffer", "CVImageBuffer"] }
+block2 = "0.6.2"
+dispatch2 = { version = "0.3.0", default-features = false, features = ["std"] }
+
+# Examples/tests
+image = "0.25"

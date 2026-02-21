@@ -1,0 +1,27 @@
+[package]
+name = "duplex-scap"
+authors = ["Tyrese Luo <tyreseluo@outlook.com>"]
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+cfg-if = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+duplex-proto = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }
+duplex-transport = { workspace = true }
+duplex-input = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { workspace = true }
+objc2-foundation = { workspace = true }
+objc2-screen-capture-kit = { workspace = true }
+objc2-core-media = { workspace = true }
+objc2-core-video = { workspace = true }
+block2 = { workspace = true }
+dispatch2 = { workspace = true }
