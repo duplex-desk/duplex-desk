@@ -1,11 +1,23 @@
-use std::net::SocketAddr;
+use std::{
+    net::SocketAddr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use duple_x_input::{InputEvent, Modifiers, MouseButton as InputMouseButton, NormalizedPos};
-use duple_x_scap::frame::DuplexScapFrame;
+use makepad_components::button::MpButtonWidgetRefExt;
 use makepad_components::makepad_widgets::*;
+use makepad_components::modal::MpModalWidgetWidgetRefExt;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-use crate::{receiver_task::start_receiver_task, video_view::VideoFrameTexture};
+use crate::{
+    host_task::{start_host_task, HostTaskHandle},
+    receiver_task::{start_viewer_task, ViewerTaskHandle},
+    task_event::TaskEvent,
+    video_view::VideoFrameTexture,
+};
+
+const DEFAULT_HOST_BIND: &str = "0.0.0.0:5000";
+const DEFAULT_VIEWER_TARGET: &str = "127.0.0.1:5000";
 
 live_design! {
     use link::theme::*;
@@ -14,43 +26,181 @@ live_design! {
     use link::widgets::*;
 
     use makepad_components::button::*;
-    use makepad_components::tooltip::*;
+    use makepad_components::input::*;
     use makepad_components::modal::*;
+    use makepad_components::tooltip::*;
 
     App = {{App}} {
         ui: <Root> {
             main_window = <Window> {
-                window: { title: "Duplex Desk Viewer" }
+                window: { title: "Duplex Desk" }
 
                 body = <View> {
                     width: Fill,
                     height: Fill,
                     flow: Overlay,
 
-                    video = <Image> {
+                    main_content = <View> {
                         width: Fill,
                         height: Fill,
-                        fit: Stretch,
-                    }
-
-                    overlay = <View> {
-                        width: Fill,
-                        height: Fit,
                         flow: Right,
-                        spacing: 10,
-                        align: { y: 0.5 },
-                        padding: { left: 12, right: 12, top: 12, bottom: 0 },
 
-                        host_hint = <Label> {
-                            width: Fit,
-                            draw_text: {
-                                color: (MUTED_FOREGROUND),
-                            }
-                            text: "127.0.0.1:5000",
+                        video = <Image> {
+                            width: Fill,
+                            height: Fill,
+                            fit: Stretch,
                         }
 
-                        status = <MpButtonSecondary> {
-                            text: "Viewer Running",
+                        side_panel = <View> {
+                            width: 360,
+                            height: Fill,
+                            flow: Down,
+                            spacing: 10,
+                            padding: { left: 12, right: 12, top: 12, bottom: 12 },
+                            show_bg: true,
+                            draw_bg: {
+                                color: #0f172acc
+                            }
+
+                            title = <Label> {
+                                draw_text: { color: #f8fafc, }
+                                text: "Connection Panel",
+                            }
+
+                            mode_label = <Label> {
+                                draw_text: { color: #cbd5e1, }
+                                text: "Mode: IDLE",
+                            }
+
+                            status_text = <Label> {
+                                draw_text: { color: #94a3b8, }
+                                text: "Initializing...",
+                            }
+
+                            remote_label = <Label> {
+                                draw_text: { color: #94a3b8, }
+                                text: "Remote: -",
+                            }
+
+                            <View> {
+                                width: Fill,
+                                height: 1,
+                                show_bg: true,
+                                draw_bg: { color: #334155 }
+                            }
+
+                            settings_title = <Label> {
+                                draw_text: { color: #f8fafc, }
+                                text: "Settings",
+                            }
+
+                            host_bind_input = <MpInput> {
+                                width: Fill,
+                                empty_text: "host bind address"
+                            }
+
+                            device_name_input = <MpInput> {
+                                width: Fill,
+                                empty_text: "device name"
+                            }
+
+                            code_row = <View> {
+                                width: Fill,
+                                height: Fit,
+                                flow: Right,
+                                spacing: 6,
+                                align: { y: 0.5 },
+
+                                <Label> {
+                                    draw_text: { color: #94a3b8, }
+                                    text: "Device Code:"
+                                }
+
+                                device_code_value = <Label> {
+                                    draw_text: { color: #f8fafc, }
+                                    text: "------"
+                                }
+                            }
+
+                            fps_input = <MpInput> {
+                                width: Fill,
+                                empty_text: "fps (next stage)"
+                            }
+
+                            bitrate_input = <MpInput> {
+                                width: Fill,
+                                empty_text: "bitrate kbps (next stage)"
+                            }
+
+                            <View> {
+                                width: Fill,
+                                height: 1,
+                                show_bg: true,
+                                draw_bg: { color: #334155 }
+                            }
+
+                            viewer_title = <Label> {
+                                draw_text: { color: #f8fafc, }
+                                text: "Viewer Connect",
+                            }
+
+                            target_input = <MpInput> {
+                                width: Fill,
+                                empty_text: "target ip:port"
+                            }
+
+                            viewer_code_input = <MpInput> {
+                                width: Fill,
+                                empty_text: "target device code"
+                            }
+
+                            btn_row = <View> {
+                                width: Fill,
+                                height: Fit,
+                                flow: Right,
+                                spacing: 8,
+
+                                connect_btn = <MpButtonPrimary> {
+                                    text: "Connect",
+                                }
+
+                                host_btn = <MpButtonSecondary> {
+                                    text: "Return Host",
+                                }
+                            }
+                        }
+                    }
+                    auth_modal = <MpModalWidget> {
+                        content = {
+                            dialog = <MpAlertDialog> {
+                                width: 420,
+                                header = {
+                                    title = { text: "Authorize Remote Control" }
+                                }
+                                body = {
+                                    <View> {
+                                        width: Fill,
+                                        flow: Down,
+                                        spacing: 8,
+                                        auth_remote_label = <Label> {
+                                            draw_text: { color: #334155, }
+                                            text: "Remote: -"
+                                        }
+                                        auth_device_label = <Label> {
+                                            draw_text: { color: #334155, }
+                                            text: "Device: -"
+                                        }
+                                        <Label> {
+                                            draw_text: { color: #64748b, }
+                                            text: "Allow this device to control your keyboard and mouse?"
+                                        }
+                                    }
+                                }
+                                footer = {
+                                    auth_reject_btn = <MpButtonGhost> { text: "Reject" }
+                                    auth_allow_btn = <MpButtonPrimary> { text: "Allow" }
+                                }
+                            }
                         }
                     }
                 }
@@ -61,20 +211,39 @@ live_design! {
 
 app_main!(App);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AppMode {
+    Idle,
+    Host,
+    Viewer,
+}
+
 #[derive(Live, LiveHook)]
 pub struct App {
     #[live]
     ui: WidgetRef,
     #[rust(ToUIReceiver::default())]
-    frame_rx: ToUIReceiver<DuplexScapFrame>,
+    task_rx: ToUIReceiver<TaskEvent>,
     #[rust(VideoFrameTexture::default())]
     video: VideoFrameTexture,
-    #[rust(false)]
-    receiver_started: bool,
+    #[rust(None)]
+    host_handle: Option<HostTaskHandle>,
+    #[rust(None)]
+    viewer_handle: Option<ViewerTaskHandle>,
     #[rust(None)]
     input_tx: Option<UnboundedSender<InputEvent>>,
     #[rust(false)]
     input_capture_active: bool,
+    #[rust(AppMode::Idle)]
+    mode: AppMode,
+    #[rust(DEFAULT_HOST_BIND.to_string())]
+    host_bind: String,
+    #[rust(default_device_name())]
+    device_name: String,
+    #[rust(generate_device_code())]
+    device_code: String,
+    #[rust(false)]
+    viewer_authorized: bool,
 }
 
 impl LiveRegister for App {
@@ -87,59 +256,165 @@ impl LiveRegister for App {
 }
 
 impl MatchEvent for App {
-    fn handle_startup(&mut self, _cx: &mut Cx) {
-        if self.receiver_started {
-            return;
-        }
-
+    fn handle_startup(&mut self, cx: &mut Cx) {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .try_init();
 
-        let host_arg = std::env::args()
-            .nth(1)
-            .unwrap_or_else(|| "127.0.0.1:5000".to_string());
+        self.ui
+            .text_input(ids!(host_bind_input))
+            .set_text(cx, DEFAULT_HOST_BIND);
+        self.ui
+            .text_input(ids!(device_name_input))
+            .set_text(cx, &self.device_name);
+        self.ui
+            .text_input(ids!(target_input))
+            .set_text(cx, DEFAULT_VIEWER_TARGET);
+        self.ui
+            .text_input(ids!(viewer_code_input))
+            .set_text(cx, &self.device_code);
+        self.ui
+            .label(ids!(device_code_value))
+            .set_text(cx, &self.device_code);
+        self.ui.text_input(ids!(fps_input)).set_text(cx, "30");
+        self.ui.text_input(ids!(bitrate_input)).set_text(cx, "4000");
 
-        let host_addr: SocketAddr = match host_arg.parse() {
-            Ok(addr) => addr,
-            Err(err) => {
-                tracing::error!("invalid host address '{host_arg}': {err}");
-                return;
-            }
-        };
-
-        let (input_tx, input_rx) = mpsc::unbounded_channel::<InputEvent>();
-        self.input_tx = Some(input_tx);
-
-        tracing::info!("starting receiver task: {host_addr}");
-        start_receiver_task(host_addr, self.frame_rx.sender(), input_rx);
-        self.receiver_started = true;
+        self.start_host_mode(cx);
     }
 
     fn handle_signal(&mut self, cx: &mut Cx) {
-        let mut latest: Option<DuplexScapFrame> = None;
-        while let Ok(frame) = self.frame_rx.try_recv() {
-            latest = Some(frame);
+        let mut latest_frame = None;
+        let mut restart_host_after_viewer = false;
+
+        while let Ok(event) = self.task_rx.try_recv() {
+            match event {
+                TaskEvent::Frame(frame) => {
+                    latest_frame = Some(frame);
+                }
+                TaskEvent::HostStarted(addr) => {
+                    if self.mode == AppMode::Host {
+                        self.set_status(cx, &format!("Host listening: {addr}"));
+                    }
+                }
+                TaskEvent::HostAwaitingApproval {
+                    remote_addr,
+                    device_name,
+                } => {
+                    self.ui
+                        .label(ids!(auth_remote_label))
+                        .set_text(cx, &format!("Remote: {remote_addr}"));
+                    self.ui
+                        .label(ids!(auth_device_label))
+                        .set_text(cx, &format!("Device: {device_name}"));
+                    self.ui.mp_modal_widget(ids!(auth_modal)).open(cx);
+                    self.set_remote(cx, &remote_addr.to_string());
+                    self.set_status(cx, "Incoming control request");
+                }
+                TaskEvent::HostStopped(message) => {
+                    if self.mode == AppMode::Host {
+                        self.host_handle = None;
+                        self.set_status(cx, &message);
+                    }
+                }
+                TaskEvent::ViewerConnected(addr) => {
+                    if self.mode == AppMode::Viewer {
+                        self.set_remote(cx, &addr.to_string());
+                        self.set_status(cx, &format!("Connected, waiting auth: {addr}"));
+                    }
+                }
+                TaskEvent::ViewerAuthResult { accepted, reason } => {
+                    if self.mode == AppMode::Viewer {
+                        self.viewer_authorized = accepted;
+                        if accepted {
+                            self.set_status(cx, &format!("Viewer authorized: {reason}"));
+                        } else {
+                            self.set_status(cx, &format!("Viewer rejected: {reason}"));
+                        }
+                    }
+                }
+                TaskEvent::ViewerStopped(message) => {
+                    if self.mode == AppMode::Viewer {
+                        self.viewer_handle = None;
+                        self.input_tx = None;
+                        self.viewer_authorized = false;
+                        self.set_status(cx, &message);
+                        restart_host_after_viewer = true;
+                    }
+                }
+            }
         }
 
-        let Some(frame) = latest else {
-            return;
-        };
+        if let Some(frame) = latest_frame {
+            if self.video.update_frame(
+                cx,
+                &frame.data,
+                frame.width as usize,
+                frame.height as usize,
+                frame.stride as usize,
+            ) {
+                let image = self.ui.image(ids!(video));
+                image.set_texture(cx, self.video.texture());
+                image.redraw(cx);
+            }
+        }
 
-        if self.video.update_frame(
-            cx,
-            &frame.data,
-            frame.width as usize,
-            frame.height as usize,
-            frame.stride as usize,
-        ) {
-            let image = self.ui.image(ids!(video));
-            image.set_texture(cx, self.video.texture());
-            image.redraw(cx);
+        if restart_host_after_viewer {
+            self.start_host_mode(cx);
         }
     }
 
-    fn handle_actions(&mut self, _cx: &mut Cx, _actions: &Actions) {}
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.ui.mp_button(ids!(connect_btn)).clicked(actions) {
+            let target = self.ui.text_input(ids!(target_input)).text();
+            let target = target.trim();
+            if target.is_empty() {
+                self.set_status(cx, "Viewer target is empty");
+                return;
+            }
+
+            let host_addr: SocketAddr = match target.parse() {
+                Ok(addr) => addr,
+                Err(err) => {
+                    self.set_status(cx, &format!("Invalid target address: {err}"));
+                    return;
+                }
+            };
+
+            self.start_viewer_mode(cx, host_addr);
+        }
+
+        if self.ui.mp_button(ids!(host_btn)).clicked(actions) {
+            self.start_host_mode(cx);
+        }
+
+        if self.ui.mp_button(ids!(auth_allow_btn)).clicked(actions) {
+            if let Some(handle) = self.host_handle.as_ref() {
+                handle.approve();
+            }
+            self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
+            self.set_status(cx, "Auth approved");
+        }
+
+        if self.ui.mp_button(ids!(auth_reject_btn)).clicked(actions) {
+            if let Some(handle) = self.host_handle.as_ref() {
+                handle.reject();
+            }
+            self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
+            self.set_status(cx, "Auth rejected");
+        }
+
+        if self
+            .ui
+            .mp_modal_widget(ids!(auth_modal))
+            .close_requested(actions)
+        {
+            if let Some(handle) = self.host_handle.as_ref() {
+                handle.reject();
+            }
+            self.ui.mp_modal_widget(ids!(auth_modal)).close(cx);
+            self.set_status(cx, "Auth dismissed");
+        }
+    }
 }
 
 impl App {
@@ -166,7 +441,119 @@ impl App {
         }
     }
 
+    fn set_status(&mut self, cx: &mut Cx, text: &str) {
+        self.ui.label(ids!(status_text)).set_text(cx, text);
+    }
+
+    fn set_remote(&mut self, cx: &mut Cx, remote: &str) {
+        self.ui
+            .label(ids!(remote_label))
+            .set_text(cx, &format!("Remote: {remote}"));
+    }
+
+    fn update_mode_label(&mut self, cx: &mut Cx) {
+        let text = match self.mode {
+            AppMode::Idle => "Mode: IDLE",
+            AppMode::Host => "Mode: HOST",
+            AppMode::Viewer => "Mode: VIEWER",
+        };
+        self.ui.label(ids!(mode_label)).set_text(cx, text);
+    }
+
+    fn stop_host_mode(&mut self) {
+        if let Some(handle) = self.host_handle.take() {
+            handle.stop();
+        }
+    }
+
+    fn stop_viewer_mode(&mut self) {
+        if let Some(handle) = self.viewer_handle.take() {
+            handle.stop();
+        }
+        self.input_tx = None;
+        self.input_capture_active = false;
+        self.viewer_authorized = false;
+    }
+
+    fn start_host_mode(&mut self, cx: &mut Cx) {
+        self.stop_viewer_mode();
+        self.stop_host_mode();
+
+        let bind_text = self.ui.text_input(ids!(host_bind_input)).text();
+        self.host_bind = if bind_text.trim().is_empty() {
+            DEFAULT_HOST_BIND.to_string()
+        } else {
+            bind_text.trim().to_string()
+        };
+
+        self.device_name = {
+            let name = self.ui.text_input(ids!(device_name_input)).text();
+            if name.trim().is_empty() {
+                default_device_name()
+            } else {
+                name.trim().to_string()
+            }
+        };
+
+        let bind_addr: SocketAddr = match self.host_bind.parse() {
+            Ok(addr) => addr,
+            Err(err) => {
+                self.set_status(cx, &format!("Invalid host bind address: {err}"));
+                self.mode = AppMode::Idle;
+                self.update_mode_label(cx);
+                return;
+            }
+        };
+
+        self.host_handle = Some(start_host_task(
+            bind_addr,
+            self.device_code.clone(),
+            self.task_rx.sender(),
+        ));
+        self.mode = AppMode::Host;
+        self.update_mode_label(cx);
+        self.set_status(cx, "Starting host service...");
+    }
+
+    fn start_viewer_mode(&mut self, cx: &mut Cx, host_addr: SocketAddr) {
+        self.stop_host_mode();
+        self.stop_viewer_mode();
+
+        let viewer_code = self.ui.text_input(ids!(viewer_code_input)).text();
+        let viewer_code = viewer_code.trim().to_string();
+        if viewer_code.is_empty() {
+            self.set_status(cx, "Target device code is empty");
+            return;
+        }
+
+        self.device_name = {
+            let name = self.ui.text_input(ids!(device_name_input)).text();
+            if name.trim().is_empty() {
+                default_device_name()
+            } else {
+                name.trim().to_string()
+            }
+        };
+
+        let (input_tx, input_rx) = mpsc::unbounded_channel::<InputEvent>();
+        self.input_tx = Some(input_tx);
+        self.viewer_handle = Some(start_viewer_task(
+            host_addr,
+            self.device_name.clone(),
+            viewer_code,
+            self.task_rx.sender(),
+            input_rx,
+        ));
+        self.mode = AppMode::Viewer;
+        self.viewer_authorized = false;
+        self.update_mode_label(cx);
+        self.set_status(cx, &format!("Connecting viewer to {host_addr}..."));
+    }
+
     fn send_input_event(&self, event: InputEvent) {
+        if self.mode != AppMode::Viewer || !self.viewer_authorized {
+            return;
+        }
         if let Some(tx) = &self.input_tx {
             let _ = tx.send(event);
         }
@@ -187,6 +574,10 @@ impl App {
     }
 
     fn handle_remote_input(&mut self, cx: &Cx, event: &Event) {
+        if self.mode != AppMode::Viewer || !self.viewer_authorized {
+            return;
+        }
+
         match event {
             Event::MouseMove(e) => {
                 if let Some(pos) = self.normalize_video_pos(cx, e.abs) {
@@ -242,8 +633,22 @@ impl App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        self.ui.handle_event(cx, event, &mut Scope::empty());
         self.match_event(cx, event);
         self.handle_remote_input(cx, event);
-        self.ui.handle_event(cx, event, &mut Scope::empty());
     }
+}
+
+fn default_device_name() -> String {
+    std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "duplex-desk".to_string())
+}
+
+fn generate_device_code() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    format!("{:06}", nanos % 1_000_000)
 }

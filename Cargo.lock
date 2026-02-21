@@ -360,6 +360,7 @@ name = "duplex-desk"
 version = "0.1.0"
 dependencies = [
  "duple-x-input",
+ "duple-x-proto",
  "duple-x-scap",
  "duple-x-transport",
  "makepad-components",
