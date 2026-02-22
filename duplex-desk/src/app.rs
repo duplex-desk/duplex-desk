@@ -984,11 +984,20 @@ impl App {
             _ => {}
         }
     }
+
+    fn should_swallow_ui_keyboard_event(&self, event: &Event) -> bool {
+        self.mode == AppMode::Viewer
+            && self.viewer_authorized
+            && self.input_capture_active
+            && matches!(event, Event::KeyDown(_) | Event::KeyUp(_))
+    }
 }
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        self.ui.handle_event(cx, event, &mut Scope::empty());
+        if !self.should_swallow_ui_keyboard_event(event) {
+            self.ui.handle_event(cx, event, &mut Scope::empty());
+        }
         self.match_event(cx, event);
         self.handle_remote_input(cx, event);
     }

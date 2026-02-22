@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, net::SocketAddr};
+use std::net::SocketAddr;
 
 use duplex_codec::{EncodedPacket, VideoEncoder};
 use duplex_input::InputInjector;
@@ -562,30 +562,36 @@ fn start_capture_pipeline() -> Result<
                 }
             };
 
-        let mut next_frame_id = 1u64;
-        let mut pending = VecDeque::<PendingEncodeTrace>::new();
+        let (trace_tx, trace_rx) = std::sync::mpsc::channel::<PendingEncodeTrace>();
+        let packet_tx_forward = packet_tx.clone();
+        std::thread::spawn(move || {
+            while let Ok(packet) = packet_rx.recv() {
+                let Ok(trace) = trace_rx.recv() else {
+                    break;
+                };
 
-        submit_frame_to_encoder(
-            &encoder,
-            &packet_rx,
-            &packet_tx,
-            &mut pending,
-            &mut next_frame_id,
-            first_frame,
-        );
+                let traced_packet = TracedEncodedPacket {
+                    packet,
+                    frame_id: trace.frame_id,
+                    trace: VideoTrace {
+                        host_capture_us: trace.host_capture_us,
+                        host_encode_submit_us: trace.host_encode_submit_us,
+                        host_encode_done_us: mono_now_us(),
+                        host_send_submit_us: 0,
+                    },
+                };
+
+                let _ = packet_tx_forward.try_send(traced_packet);
+            }
+        });
+
+        let mut next_frame_id = 1u64;
+
+        submit_frame_to_encoder(&encoder, &trace_tx, &mut next_frame_id, first_frame);
 
         while let Ok(frame) = frame_rx.recv() {
-            submit_frame_to_encoder(
-                &encoder,
-                &packet_rx,
-                &packet_tx,
-                &mut pending,
-                &mut next_frame_id,
-                frame,
-            );
+            submit_frame_to_encoder(&encoder, &trace_tx, &mut next_frame_id, frame);
         }
-
-        drain_encoded_packets(&packet_rx, &packet_tx, &mut pending);
     });
 
     Ok((capturer, packet_async_rx))
@@ -593,9 +599,7 @@ fn start_capture_pipeline() -> Result<
 
 fn submit_frame_to_encoder(
     encoder: &VideoEncoder,
-    packet_rx: &std::sync::mpsc::Receiver<EncodedPacket>,
-    packet_tx: &tokio::sync::mpsc::Sender<TracedEncodedPacket>,
-    pending: &mut VecDeque<PendingEncodeTrace>,
+    trace_tx: &std::sync::mpsc::Sender<PendingEncodeTrace>,
     next_frame_id: &mut u64,
     frame: DuplexScapFrame,
 ) {
@@ -604,42 +608,20 @@ fn submit_frame_to_encoder(
 
     let host_capture_us = mono_now_us();
     let host_encode_submit_us = mono_now_us();
-    pending.push_back(PendingEncodeTrace {
-        frame_id,
-        host_capture_us,
-        host_encode_submit_us,
-    });
 
     if let Err(err) = encoder.encode(&frame) {
         tracing::warn!("encode error: {err}");
-        let _ = pending.pop_back();
+        return;
     }
 
-    drain_encoded_packets(packet_rx, packet_tx, pending);
-}
-
-fn drain_encoded_packets(
-    packet_rx: &std::sync::mpsc::Receiver<EncodedPacket>,
-    packet_tx: &tokio::sync::mpsc::Sender<TracedEncodedPacket>,
-    pending: &mut VecDeque<PendingEncodeTrace>,
-) {
-    while let Ok(packet) = packet_rx.try_recv() {
-        let Some(trace) = pending.pop_front() else {
-            tracing::warn!("encoded packet without pending trace");
-            continue;
-        };
-
-        let traced_packet = TracedEncodedPacket {
-            packet,
-            frame_id: trace.frame_id,
-            trace: VideoTrace {
-                host_capture_us: trace.host_capture_us,
-                host_encode_submit_us: trace.host_encode_submit_us,
-                host_encode_done_us: mono_now_us(),
-                host_send_submit_us: 0,
-            },
-        };
-
-        let _ = packet_tx.try_send(traced_packet);
+    if trace_tx
+        .send(PendingEncodeTrace {
+            frame_id,
+            host_capture_us,
+            host_encode_submit_us,
+        })
+        .is_err()
+    {
+        tracing::warn!("trace queue closed while submitting encoded frame");
     }
 }

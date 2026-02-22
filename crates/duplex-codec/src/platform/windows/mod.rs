@@ -3,7 +3,7 @@ use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 use std::ptr;
 use std::sync::Mutex;
-use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 
 use duplex_scap::frame::DuplexScapFrame;
 use windows::Win32::Foundation::{HMODULE, RPC_E_CHANGED_MODE};
@@ -621,8 +621,9 @@ fn drain_encoder(state: &mut EncoderState) -> Result<(), String> {
                         state.seq_header_annexb.as_deref(),
                         state.nal_len_size,
                     )? {
-                        if state.packet_tx.send(packet).is_err() {
-                            return Ok(());
+                        match state.packet_tx.try_send(packet) {
+                            Ok(()) | Err(TrySendError::Full(_)) => {}
+                            Err(TrySendError::Disconnected(_)) => return Ok(()),
                         }
                     }
                 }
@@ -739,8 +740,9 @@ fn drain_decoder(state: &mut DecoderState) -> Result<(), String> {
                     if let Some(frame) =
                         map_decoded_sample(&sample, state.out_fmt, state.width, state.height)?
                     {
-                        if state.frame_tx.send(frame).is_err() {
-                            return Ok(());
+                        match state.frame_tx.try_send(frame) {
+                            Ok(()) | Err(TrySendError::Full(_)) => {}
+                            Err(TrySendError::Disconnected(_)) => return Ok(()),
                         }
                     }
                 }

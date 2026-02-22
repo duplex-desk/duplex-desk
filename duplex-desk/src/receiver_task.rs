@@ -195,9 +195,13 @@ async fn run_viewer(
                         pending_decode.push_back(PendingDecodeTrace {
                             frame_id,
                             host_trace,
+                            source_timestamp_us: packet.timestamp_us,
                             viewer_recv_us,
                             viewer_decode_submit_us: decode_submit_us,
                         });
+                        while pending_decode.len() > 120 {
+                            let _ = pending_decode.pop_front();
+                        }
 
                         if let Some(decoder) = decoder.as_ref()
                             && let Err(err) = decoder.decode(&packet) {
@@ -210,15 +214,20 @@ async fn run_viewer(
                             let mut latest = None;
                             while let Ok(frame) = rx.try_recv() {
                                 let viewer_decode_done_us = mono_now_us();
-                                let telemetry = pending_decode
-                                    .pop_front()
-                                    .map(|pending| FrameTelemetry {
-                                        frame_id: pending.frame_id,
-                                        host_trace: pending.host_trace,
-                                        viewer_recv_us: pending.viewer_recv_us,
-                                        viewer_decode_submit_us: pending.viewer_decode_submit_us,
-                                        viewer_decode_done_us,
-                                    });
+                                let matched_pending = pending_decode
+                                    .iter()
+                                    .position(|pending| {
+                                        pending.source_timestamp_us == frame.timestamp_us
+                                    })
+                                    .and_then(|idx| pending_decode.remove(idx))
+                                    .or_else(|| pending_decode.pop_front());
+                                let telemetry = matched_pending.map(|pending| FrameTelemetry {
+                                    frame_id: pending.frame_id,
+                                    host_trace: pending.host_trace,
+                                    viewer_recv_us: pending.viewer_recv_us,
+                                    viewer_decode_submit_us: pending.viewer_decode_submit_us,
+                                    viewer_decode_done_us,
+                                });
 
                                 if let Some(t) = telemetry.as_ref() {
                                     latency_stats.observe(t);
@@ -245,6 +254,7 @@ async fn run_viewer(
 struct PendingDecodeTrace {
     frame_id: u64,
     host_trace: Option<VideoTrace>,
+    source_timestamp_us: u64,
     viewer_recv_us: u64,
     viewer_decode_submit_us: u64,
 }
